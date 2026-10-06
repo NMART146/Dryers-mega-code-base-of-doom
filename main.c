@@ -9,6 +9,7 @@
 #define BME_MOSI 11
 #define BME_CS 10
 
+int desired_water_flowrate //can be calculated from our desired amount per day
 
 void setup()
 {
@@ -17,10 +18,11 @@ void setup()
 
 void loop()
 {
+    //sensors pull data
 
 }
 
-int omegaToMassFlowWaterTransfer()
+int massFlowWaterToOmegaTransfer(int desired_flow)
 {
     //(30*pi^2*r^2*rho*h*omega_desmax)/(m.air*t_test*(omega_3-omega_4)(m.air*(omega_3-omega_4)+30*pi*r^2*rho*h*omega_3))
 	//r, pi, rho, h, omega_desmax, t_test all constants
