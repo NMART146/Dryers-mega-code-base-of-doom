@@ -32,7 +32,7 @@ void loop()
     sensorPull(3, &sensor3Data[0], &sensor3Data[1], &sensor3Data[2]);
 }
 
-float sensorPull(int pin, float temp, float pressure, float humidity)
+void sensorPull(int pin, float temp, float pressure, float humidity)
 {
     switch(pin):
     {
