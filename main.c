@@ -1,57 +1,61 @@
 #include <Arduino.h>
 #include <Wire.h>
-#include <SPI.h>
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BME280.h>
 
-#define BME1_SCK 13 //Update pins
-#define BME1_MISO 12 //Update pins
-#define BME1_MOSI 11 //Update pins
-#define BME1_CS 10 //Update pins
+#define multiplexer 0x70 // I2C address for multiplexer
 
-Adafruit_BME280 bme1;
+Adafruit_BME280 bme;
 
-int desired_water_flowrate //can be calculated from our desired amount per day
-int[3] sensor1Data = [0,0,0]; //temp, pressure, humidity
-int[3] sensor2Data = [0,0,0]; //temp, pressure, humidity
-int[3] sensor3Data = [0,0,0]; //temp, pressure, humidity
+// Storage arrays: [temp, pressure, humidity]
+float sensor1Data[3] = {0.0, 0.0, 0.0};
+float sensor2Data[3] = {0.0, 0.0, 0.0};
+float sensor3Data[3] = {0.0, 0.0, 0.0};
+
+// Helper function to switch the active multiplexer channel (0 through 7)
+void tcaselect(uint8_t bus) {
+  if (bus > 7) return;
+  Wire.beginTransmission(multiplexer);
+  Wire.write(1 << bus);
+  Wire.endTransmission();
+}
+
+// Function Prototype
+void sensorPull(uint8_t channel, float &temp, float &pressure, float &humidity);
 
 void setup()
 {
   Serial.begin(115200);
-  bme1.begin(BME1_CS,BME1_MOSI,BME1_MISO,BME1_SCK); //2-3 more of these depending on sensor count
-  bme2.begin(BME2_CS,BME2_MOSI,BME2_MISO,BME2_SCK);
-  bme3.begin(BME3_CS,BME3_MOSI,BME3_MISO,BME3_SCK);
+  while (!Serial);
+  Wire.begin();
+
+  // Initialize sensors on multiplexer channels 0, 1, and 2
+  for (uint8_t channel = 0; channel < 3; channel++) {
+    tcaselect(channel);
+    if (!bme.begin(0x76, &Wire)) { 
+      Serial.printf("BME280 not found on channel %d\n", channel);
+    } else {
+      Serial.printf("BME280 initialized on channel %d\n", channel);
+    }
+  }
 }
 
 void loop()
 {
     //sensors pull data
-    sensorPull(1, &sensor1Data[0], &sensor1Data[1], &sensor1Data[2]);
-    sensorPull(2, &sensor2Data[0], &sensor2Data[1], &sensor2Data[2]);
-    sensorPull(3, &sensor3Data[0], &sensor3Data[1], &sensor3Data[2]);
+    sensorPull(1, sensor1Data[0], sensor1Data[1], sensor1Data[2]);
+    sensorPull(2, sensor2Data[0], sensor2Data[1], sensor2Data[2]);
+    sensorPull(3, sensor3Data[0], sensor3Data[1], sensor3Data[2]);
+
+    delay(100);
 }
 
-void sensorPull(int pin, float temp, float pressure, float humidity)
-{
-    switch(pin):
-    {
-        case 1:
-            temp = bme1.readTemperature(); //celsius bih
-            pressure = bme1.readPressure(); //pascals
-            humidity = bme1.readHumidity(); //percentage
-        
-        case 2:
-            temp = bme2.readTemperature(); //celsius bih
-            pressure = bme2.readPressure(); //pascals
-            humidity = bme2.readHumidity(); //percentage
+void sensorPull(uint8_t channel, float &temp, float &pressure, float &humidity) {
+  tcaselect(channel); // Switch multiplexer to target channel
 
-        case 3:
-            temp = bme3.readTemperature(); //celsius bih
-            pressure = bme3.readPressure(); //pascals
-            humidity = bme3.readHumidity(); //percentage
-    }
-    
+  temp = bme.readTemperature();
+  pressure = bme.readPressure();
+  humidity = bme.readHumidity();
 }
 
 float massFlowWaterToOmegaTransfer(int desired_flow)
