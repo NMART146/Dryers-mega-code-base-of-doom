@@ -12,6 +12,14 @@ float sensor1Data[3] = {0.0, 0.0, 0.0};
 float sensor2Data[3] = {0.0, 0.0, 0.0};
 float sensor3Data[3] = {0.0, 0.0, 0.0};
 
+// Constants for wheel speed func
+float omega_dot = 3.16; //rate of desiccant adsorption (g/(m^2*s))
+float r = 0.2; //radius of wheel (0.2m)
+float rho = 983200; //density of water @60c (g/m^3)
+float h = 31125; //fabric mass enthalpy
+
+
+
 // Helper function to switch the active multiplexer channel (0 through 7)
 void tcaselect(uint8_t bus) {
   if (bus > 7) return;
@@ -58,9 +66,14 @@ void sensorPull(uint8_t channel, float &temp, float &pressure, float &humidity) 
   humidity = bme.readHumidity();
 }
 
-float massFlowWaterToOmegaTransfer(int desired_flow)
+float massFlowWaterToOmegaTransfer(float desired_flow)
 {
-    //(30*pi^2*r^2*rho*h*omega_desmax)/(m.air*t_test*(omega_3-omega_4)(m.air*(omega_3-omega_4)+30*pi*r^2*rho*h*omega_3))
+  //iteratively adjust enthalpy value to find true value. if water flow rate is too low, lower enthalpy. too high, raise.
+  //(30*pi^2*r^2*rho*h*omega_desmax)/(m.air*t_test*(omega_3-omega_4)(m.air*(omega_3-omega_4)+30*pi*r^2*rho*h*omega_3))
 	//r, pi, rho, h, omega_desmax, t_test all constants
 	//other vars will be collected with state sensors
+  float omega_3 = //humidity at state 3 (update every cycle)
+  float omega_4 = //humidity at state 4 (update every cycle)
+  float omega = (30 * PI * PI * pow(r,2)*rho*h*omega_dot)/(m_air*(omega_3-omega_4)*(m_air*(omega_3-omega_4)+30*PI*pow(r,2)*rho*h*omega_3));
+  return omega;
 }
