@@ -2,8 +2,17 @@
 #include <Wire.h>
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BME280.h>
+#include <AccelStepper.h>
 
 #define multiplexer 0x70 // I2C address for multiplexer
+
+// Stepper pins
+#define stepPin 33
+#define dirPin 32
+#define enablePin 25
+#define motorInterfaceType 1
+
+AccelStepper stepper(motorInterfaceType, stepPin, dirPin);
 
 Adafruit_BME280 bme;
 
@@ -46,6 +55,12 @@ void setup()
       Serial.printf("BME280 initialized on channel %d\n", channel);
     }
   }
+
+  // Initialize stepper motor
+  // Set maximum allowable speed threshold (steps per second)
+  stepper.setMaxSpeed(1000);
+  // Set constant running speed (steps per second)
+  stepper.setSpeed(30);
 }
 
 void loop()
@@ -54,6 +69,9 @@ void loop()
     sensorPull(1, sensor1Data[0], sensor1Data[1], sensor1Data[2]);
     sensorPull(2, sensor2Data[0], sensor2Data[1], sensor2Data[2]);
     sensorPull(3, sensor3Data[0], sensor3Data[1], sensor3Data[2]);
+
+    // Runs the motor continuously at the constant speed set by setSpeed()
+    stepper.runSpeed();
 
     delay(100);
 }
