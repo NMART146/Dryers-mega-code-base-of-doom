@@ -72,8 +72,11 @@ float massFlowWaterToOmegaTransfer(float desired_flow)
   //(30*pi^2*r^2*rho*h*omega_desmax)/(m.air*t_test*(omega_3-omega_4)(m.air*(omega_3-omega_4)+30*pi*r^2*rho*h*omega_3))
 	//r, pi, rho, h, omega_desmax, t_test all constants
 	//other vars will be collected with state sensors
+
+  /*
   float omega_3 = //humidity at state 3 (update every cycle)
   float omega_4 = //humidity at state 4 (update every cycle)
   float omega = (30 * PI * PI * pow(r,2)*rho*h*omega_dot)/(m_air*(omega_3-omega_4)*(m_air*(omega_3-omega_4)+30*PI*pow(r,2)*rho*h*omega_3));
   return omega;
+  */
 }

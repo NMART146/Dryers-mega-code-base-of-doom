@@ -1,1 +1,4 @@
 .pio/
+*.txt
+*.esp32dev
+.vscode/
