@@ -3,18 +3,28 @@
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BME280.h>
 #include <AccelStepper.h>
+#include <RBDdimmer.h>
 
+// Initialize I2C multiplexer and BME280 sensor
 #define multiplexer 0x70 // I2C address for multiplexer
+Adafruit_BME280 bme;
 
 // Stepper pins
 #define stepPin 33
 #define dirPin 32
 #define enablePin 25
 #define motorInterfaceType 1
-
 AccelStepper stepper(motorInterfaceType, stepPin, dirPin);
 
-Adafruit_BME280 bme;
+// Dimmer pins
+#define ZC_PIN 13
+#define HEATER_PIN 14
+#define FAN1_PIN 27
+#define FAN2_PIN 26
+dimmerLamp HeaterDimmer(HEATER_PIN, ZC_PIN);
+dimmerLamp Fan1Dimmer(FAN1_PIN, ZC_PIN);
+dimmerLamp Fan2Dimmer(FAN2_PIN, ZC_PIN);
+
 
 // Storage arrays: [temp, pressure, humidity]
 float sensor1Data[3] = {0.0, 0.0, 0.0};
@@ -61,6 +71,15 @@ void setup()
   stepper.setMaxSpeed(1000);
   // Set constant running speed (steps per second)
   stepper.setSpeed(30);
+
+  // Initialize dimmers
+  HeaterDimmer.begin(NORMAL_MODE, ON);
+  Fan1Dimmer.begin(NORMAL_MODE, ON);
+  Fan2Dimmer.begin(NORMAL_MODE, ON);
+  // Set dimmer levels to 100% power
+  HeaterDimmer.setPower(100);
+  Fan1Dimmer.setPower(100);
+  Fan2Dimmer.setPower(100);
 }
 
 void loop()
