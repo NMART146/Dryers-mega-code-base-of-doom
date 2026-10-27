@@ -37,6 +37,7 @@ float r = 0.2; //radius of wheel (0.2m)
 float rho = 983200; //density of water @60c (g/m^3)
 float h = 31125; //fabric mass enthalpy
 
+float desired_m_water = 0.081; //desired water mass flow rate (g/s); equiv to 7L/day
 
 
 // Helper function to switch the active multiplexer channel (0 through 7)
@@ -118,10 +119,19 @@ float massFlowWaterToThetaDotTransfer(float desired_flow)
 	//r, pi, rho, h, omega_desmax, t_test all constants
 	//other vars will be collected with state sensors
 
-  /*
-  float omega_3 = //humidity at state 3 (update every cycle)
-  float omega_4 = //humidity at state 4 (update every cycle)
-  float theta_dot = (30 * PI * PI * pow(r,2)*rho*h*omega_dot)/(m_air*(omega_3-omega_4)*(m_air*(omega_3-omega_4)+30*PI*pow(r,2)*rho*h*omega_3));
+  
+  float omega_3 = sensor3Data[2]; //humidity at state 3 (updated every cycle)
+  float omega_4 = sensor4Data[2]; //humidity at state 4 (updated every cycle)
+  float theta_dot = (30 * (omega_3 - omega_4) * PI * PI * pow(r,2)*rho*h*omega_dot)/((omega_3-omega_4)*(m_air*(omega_3-omega_4)+30*PI*pow(r,2)*rho*h*omega_3));
+  if(m_air * (omega_3 - omega_4) > desired_m_water)
+  {
+    h += 1;
+  }
+  else
+  {
+    h -= 1;
+  }
   return theta_dot;
-  */
 }
+
+//float heaterControl()
