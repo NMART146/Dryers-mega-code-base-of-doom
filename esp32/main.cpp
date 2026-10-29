@@ -98,6 +98,8 @@ void loop()
     sensorPull(2, sensor2Data[0], sensor2Data[1], sensor2Data[2]);
     sensorPull(3, sensor3Data[0], sensor3Data[1], sensor3Data[2]);
 
+    thetaDotToStepsPerSecond(massFlowWaterToThetaDotTransfer(desired_m_water)); //assign to a var
+
     // Runs the motor continuously at the constant speed set by setSpeed()
     stepper.runSpeed();
 
@@ -122,7 +124,9 @@ float massFlowWaterToThetaDotTransfer(float desired_flow)
   
   float omega_3 = sensor3Data[2]; //humidity at state 3 (updated every cycle)
   float omega_4 = sensor4Data[2]; //humidity at state 4 (updated every cycle)
-  float theta_dot = (30 * (omega_3 - omega_4) * PI * PI * pow(r,2)*rho*h*omega_dot)/((omega_3-omega_4)*(m_air*(omega_3-omega_4)+30*PI*pow(r,2)*rho*h*omega_3));
+  float theta_dot = (30 * (omega_3 - omega_4) * PI * PI * pow(r,2)*rho*h*omega_dot)/
+  ((omega_3-omega_4)*(m_air*(omega_3-omega_4)+30*PI*pow(r,2)*rho*h*omega_3));
+  
   if(m_air * (omega_3 - omega_4) > desired_m_water)
   {
     h += 1;
@@ -134,4 +138,16 @@ float massFlowWaterToThetaDotTransfer(float desired_flow)
   return theta_dot;
 }
 
-//float heaterControl()
+float heaterControl()
+{
+  //h_air = dependent on flow rate of air through fans
+  //A_heater = area of heater surface
+
+  //rise time is 20 sec, settle time is 57 sec, overshoot is 5%
+  float zeta = 0.7;
+  float omega_n = 0.11;
+  float kp = 8.8/(2.2/omega_n)**2-1/(h_air*A_heater);
+  float ki = omega_n**2;
+
+  float TF = 
+}
