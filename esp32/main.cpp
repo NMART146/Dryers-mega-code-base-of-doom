@@ -4,6 +4,8 @@
 #include <Adafruit_BME280.h>
 #include <AccelStepper.h>
 #include <RBDdimmer.h>
+#include <WiFi.h>
+#include <HTTPClient.h>
 
 // Initialize I2C multiplexer and BME280 sensor
 #define multiplexer 0x70 // I2C address for multiplexer
@@ -40,6 +42,50 @@ float h = 31125; //fabric mass enthalpy
 float desired_m_water = 0.081; //desired water mass flow rate (g/s); equiv to 7L/day
 
 
+// WIFI Setup (setup specific to Mines network)
+const char* SSID         = "Mines";
+const char* EAP_IDENTITY = "email@mines.edu"; // mines email
+const char* EAP_USERNAME = "email@mines.edu"; // mines email
+const char* EAP_PASSWORD = "password"; // your Mines password
+// IP of the computer running python app
+const char* SERVER_URL = "http://10.186.161.208:5000/data";
+const unsigned long SEND_INTERVAL_MS = 1000;  // how often to send a sample
+
+HTTPClient http;
+unsigned long lastSend = 0;
+
+void randomDataTest(float &temp, float &hum, int &adc) {
+  temp = 20.0 + (random(0, 500) / 100.0);   // fake temperature
+  hum  = 40.0 + (random(0, 1000) / 100.0);  // fake humidity
+  adc  = analogRead(34);                    // real ADC read on GPIO34
+}
+
+void connectWiFi() {
+  Serial.print("Connecting to Wi-Fi");
+  WiFi.mode(WIFI_STA);
+  WiFi.disconnect(true);
+  delay(100);
+  // PEAP/MSCHAPv2 (the most common 802.1X setup)
+  WiFi.begin(SSID, WPA2_AUTH_PEAP, EAP_IDENTITY, EAP_USERNAME, EAP_PASSWORD);
+  Serial.print("Connecting");
+  unsigned long start = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - start < 20000) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println();
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.print("Connected, IP: ");
+    Serial.println(WiFi.localIP());
+  } else {
+    Serial.println("Connection failed");
+  }
+}
+
+void sendData();
+
+
 // Helper function to switch the active multiplexer channel (0 through 7)
 void tcaselect(uint8_t bus) {
   if (bus > 7) return;
@@ -63,6 +109,10 @@ void setup()
 {
   Serial.begin(115200);
   while (!Serial);
+  delay(500);
+  connectWiFi();
+  http.setReuse(true);  // keep the TCP connection open between samples
+  delay(500);
   Wire.begin();
 
   // Initialize sensors on multiplexer channels 0, 1, and 2
@@ -93,17 +143,23 @@ void setup()
 
 void loop()
 {
-    //sensors pull data
-    sensorPull(1, sensor1Data[0], sensor1Data[1], sensor1Data[2]);
-    sensorPull(2, sensor2Data[0], sensor2Data[1], sensor2Data[2]);
-    sensorPull(3, sensor3Data[0], sensor3Data[1], sensor3Data[2]);
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("Wi-Fi lost, reconnecting...");
+    // connectWiFi();
+  }
+  //sensors pull data
+  sensorPull(1, sensor1Data[0], sensor1Data[1], sensor1Data[2]);
+  sensorPull(2, sensor2Data[0], sensor2Data[1], sensor2Data[2]);
+  sensorPull(3, sensor3Data[0], sensor3Data[1], sensor3Data[2]);
 
-    thetaDotToStepsPerSecond(massFlowWaterToThetaDotTransfer(desired_m_water)); //assign to a var
+  thetaDotToStepsPerSecond(massFlowWaterToThetaDotTransfer(desired_m_water)); //assign to a var
 
-    // Runs the motor continuously at the constant speed set by setSpeed()
-    stepper.runSpeed();
+  // Runs the motor continuously at the constant speed set by setSpeed()
+  stepper.runSpeed();
 
-    delay(100);
+  // sendData();
+
+  delay(100);
 }
 
 void sensorPull(uint8_t channel, float &temp, float &pressure, float &humidity) {
@@ -112,6 +168,29 @@ void sensorPull(uint8_t channel, float &temp, float &pressure, float &humidity) 
   temp = bme.readTemperature();
   pressure = bme.readPressure();
   humidity = bme.readHumidity();
+}
+
+void sendData() {
+  if (WiFi.status() == WL_CONNECTED && millis() - lastSend >= SEND_INTERVAL_MS) {
+    lastSend = millis();
+    http.begin(SERVER_URL);
+    http.addHeader("Content-Type", "application/json");
+
+    // Create JSON payload
+    String payload = "{";
+    payload += "\"sensor1\": {\"temp\": " + String(sensor1Data[0]) + ", \"pressure\": " + String(sensor1Data[1]) + ", \"humidity\": " + String(sensor1Data[2]) + "},";
+    payload += "\"sensor2\": {\"temp\": " + String(sensor2Data[0]) + ", \"pressure\": " + String(sensor2Data[1]) + ", \"humidity\": " + String(sensor2Data[2]) + "},";
+    payload += "\"sensor3\": {\"temp\": " + String(sensor3Data[0]) + ", \"pressure\": " + String(sensor3Data[1]) + ", \"humidity\": " + String(sensor3Data[2]) + "}";
+    payload += "}";
+
+    int httpResponseCode = http.POST(payload);
+    if (httpResponseCode > 0) {
+      Serial.printf("HTTP Response code: %d\n", httpResponseCode);
+    } else {
+      Serial.printf("Error sending POST: %s\n", http.errorToString(httpResponseCode).c_str());
+    }
+    http.end();
+  }
 }
 
 float massFlowWaterToThetaDotTransfer(float desired_flow)
