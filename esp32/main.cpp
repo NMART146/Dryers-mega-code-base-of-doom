@@ -6,6 +6,7 @@
 #include <RBDdimmer.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
+#include <iostream>
 
 // Initialize I2C multiplexer and BME280 sensor
 #define multiplexer 0x70 // I2C address for multiplexer
@@ -217,16 +218,33 @@ float massFlowWaterToThetaDotTransfer(float desired_flow)
   return theta_dot;
 }
 
-float heaterControl()
+double heaterControl(double T_in)
 {
   //h_air = dependent on flow rate of air through fans
   //A_heater = area of heater surface
+  static double T_prev = 0.0;
+  static double V_prev = 0.0;
+
+  double Ts = //sampling time
 
   //rise time is 20 sec, settle time is 57 sec, overshoot is 5%
-  float zeta = 0.7;
-  float omega_n = 0.11;
-  float kp = 8.8/(2.2/omega_n)**2-1/(h_air*A_heater);
-  float ki = omega_n**2;
+  double zeta = 0.7;
+  double omega_n = 0.11;
+  double kp = 8.8/(2.2/omega_n)**2-1/(h_air*A_heater);
+  double ki = omega_n**2;
 
-  float TF = 
+  double C = (1.0 / (h_air * A_heater)) + kp;
+  double D = 8.0 * C + 4.0 * ki * Ts;
+
+  double b0 = (2.0 * kp + ki * Ts) / D;
+  double b1 = (ki * Ts - 2.0 * kp) / D;
+  double a1 = (4.0 * ki * Ts - 8.0 * C) / D;
+
+  double V_out = b0 * T_in + b1 * T_prev - a1 * V_prev;
+
+  T_prev = T_in;
+  V_prev = V_out;
+
+  return V_out;
+
 }
