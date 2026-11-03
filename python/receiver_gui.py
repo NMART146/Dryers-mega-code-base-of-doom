@@ -334,7 +334,7 @@ def run_gui():
                     parts = key.split("_")
                     return f"{parts[0].capitalize()} ({parts[1]})" if len(parts) == 2 else key
 
-                # Loop through and plot ALL temperature keys (sensor1_temp, sensor2_temp, sensor3_temp)
+                # Subplot 1: Temperature
                 for i, k in enumerate(temp_keys):
                     ax_temp.plot(
                         x_range,
@@ -343,6 +343,12 @@ def run_gui():
                         label=format_label(k),
                         linewidth=1.5,
                     )
+                ax_temp.set_ylabel("Temp (°C)")
+                ax_temp.grid(True, linestyle="--", alpha=0.5)
+                if temp_keys:
+                    ax_temp.legend(loc="upper left", fontsize=8)
+
+                # Subplot 2: Pressure
                 for i, k in enumerate(press_keys):
                     ax_press.plot(
                         x_range,
@@ -351,6 +357,12 @@ def run_gui():
                         label=format_label(k),
                         linewidth=1.5,
                     )
+                ax_press.set_ylabel("Pressure (hPa)")
+                ax_press.grid(True, linestyle="--", alpha=0.5)
+                if press_keys:
+                    ax_press.legend(loc="upper left", fontsize=8)
+
+                # Subplot 3: Humidity
                 for i, k in enumerate(hum_keys):
                     ax_hum.plot(
                         x_range,
@@ -359,35 +371,10 @@ def run_gui():
                         label=format_label(k),
                         linewidth=1.5,
                     )
-                ax_temp.set_ylabel("Temp (°C)")
-                ax_temp.grid(True, linestyle="--", alpha=0.5)
-                ax_temp.legend(loc="upper left", fontsize=8)
-
-                # Subplot 2: Pressure
-                if press_k:
-                    ax_press.plot(
-                        x_range,
-                        [r.get(press_k, 0) for r in snap],
-                        color="#1f77b4",
-                        label=press_k,
-                    )
-                ax_press.set_ylabel("Pressure (hPa)")
-                ax_press.grid(True, linestyle="--", alpha=0.5)
-                ax_press.legend(loc="upper left", fontsize=8)
-
-                # Subplot 3: Humidity
-                if hum_k:
-                    ax_hum.plot(
-                        x_range,
-                        [r.get(hum_k, 0) for r in snap],
-                        color="#2ca02c",
-                        label=hum_k,
-                    )
                 ax_hum.set_ylabel("Humidity (%)")
                 ax_hum.grid(True, linestyle="--", alpha=0.5)
-                ax_hum.legend(loc="upper left", fontsize=8)
-
-                ax_hum.set_xlabel(f"Last {len(snap)} samples")
+                if hum_keys:
+                    ax_hum.legend(loc="upper left", fontsize=8)
 
                 canvas.draw_idle()
 
