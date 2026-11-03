@@ -55,10 +55,18 @@ const unsigned long SEND_INTERVAL_MS = 1000;  // how often to send a sample
 HTTPClient http;
 unsigned long lastSend = 0;
 
-void randomDataTest(float &temp, float &hum, int &adc) {
-  temp = 20.0 + (random(0, 500) / 100.0);   // fake temperature
-  hum  = 40.0 + (random(0, 1000) / 100.0);  // fake humidity
-  adc  = analogRead(34);                    // real ADC read on GPIO34
+void randomDataTest() {
+  sensor1Data[0] = 20.0  + (random(0, 500)  / 100.0);  // Temp: 20.0 - 25.0 °C
+  sensor1Data[1] = 980.0 + (random(0, 5000) / 100.0);  // Pressure: 980.0 - 1030.0 hPa
+  sensor1Data[2] = 40.0  + (random(0, 1000) / 100.0);  // Humidity: 40.0 - 50.0 %
+
+  sensor2Data[0] = 20.0  + (random(0, 500)  / 100.0);  // Temp: 20.0 - 25.0 °C
+  sensor2Data[1] = 980.0 + (random(0, 5000) / 100.0);  // Pressure: 980.0 - 1030.0 hPa
+  sensor2Data[2] = 40.0  + (random(0, 1000) / 100.0);  // Humidity: 40.0 - 50.0 %
+
+  sensor3Data[0] = 20.0  + (random(0, 500)  / 100.0);  // Temp: 20.0 - 25.0 °C
+  sensor3Data[1] = 980.0 + (random(0, 5000) / 100.0);  // Pressure: 980.0 - 1030.0 hPa
+  sensor3Data[2] = 40.0  + (random(0, 1000) / 100.0);  // Humidity: 40.0 - 50.0 %
 }
 
 void connectWiFi() {
