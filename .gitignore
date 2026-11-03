@@ -2,3 +2,4 @@
 *.txt
 *.esp32dev
 .vscode/
+.python/esp32_log.csv
