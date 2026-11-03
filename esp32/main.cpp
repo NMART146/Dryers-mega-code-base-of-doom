@@ -233,7 +233,7 @@ double heaterControl(double T_in)
   static double T_prev = 0.0;
   static double V_prev = 0.0;
 
-  double Ts = //sampling time
+  double Ts = 0.1; //sampling time
 
   //rise time is 20 sec, settle time is 57 sec, overshoot is 5%
   double zeta = 0.7;
