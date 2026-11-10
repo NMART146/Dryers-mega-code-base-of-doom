@@ -47,6 +47,12 @@ float h = 31125; //fabric mass enthalpy
 
 float desired_m_water = 0.081; //desired water mass flow rate (g/s); equiv to 7L/day
 
+// Control parameters
+bool fanOn = true;
+bool heaterOn = false;
+bool motorOn = false;
+float adsorbPower = 30.0;
+float regenPower = 30.0;
 
 // WIFI Setup (setup specific to Mines network)
 const char* SSID         = "Mines";
@@ -108,8 +114,9 @@ void tcaselect(uint8_t bus) {
   Wire.endTransmission();
 }
 
-// Function Prototype
+// Functions
 void sensorPull(uint8_t channel, float &temp, float &pressure, float &humidity);
+void updateHardware();
 
 void thetaDotToStepsPerSecond(float &theta_dot) {
   // Convert theta_dot (rad/s) to steps per second for the stepper motor
@@ -159,26 +166,32 @@ void setup()
   HeaterDimmer.setPower(0);
 }
 
+// Loop Timing
+unsigned long lastLoopTime = 0;
+const unsigned long LOOP_INTERVAL_MS = 100;  // 100 ms loop interval
 void loop()
 {
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("Wi-Fi lost, reconnecting...");
-    connectWiFi();
+  unsigned long currentTime = millis();
+  if (currentTime - lastLoopTime >= LOOP_INTERVAL_MS) {
+    lastLoopTime = currentTime;
+
+    if (WiFi.status() != WL_CONNECTED) {
+      Serial.println("Wi-Fi lost, reconnecting...");
+      connectWiFi();
+    }
+    //sensors pull data
+    sensorPull(1, sensor1Data[0], sensor1Data[1], sensor1Data[2]);
+    sensorPull(2, sensor2Data[0], sensor2Data[1], sensor2Data[2]);
+    sensorPull(3, sensor3Data[0], sensor3Data[1], sensor3Data[2]);
+
+    // randomDataTest();
+    sendData();
+    float theta_dot = massFlowWaterToThetaDotTransfer(desired_m_water);
+    thetaDotToStepsPerSecond(theta_dot); // set stepper speed based on calculated theta_dot
   }
-  //sensors pull data
-  sensorPull(1, sensor1Data[0], sensor1Data[1], sensor1Data[2]);
-  sensorPull(2, sensor2Data[0], sensor2Data[1], sensor2Data[2]);
-  sensorPull(3, sensor3Data[0], sensor3Data[1], sensor3Data[2]);
 
-  thetaDotToStepsPerSecond(massFlowWaterToThetaDotTransfer(desired_m_water)); //assign to a var
+  updateHardware();
 
-  // Runs the motor continuously at the constant speed set by setSpeed()
-  stepper.runSpeed();
-
-  // randomDataTest();
-  sendData();
-
-  delay(100);
 }
 
 void sensorPull(uint8_t channel, float &temp, float &pressure, float &humidity) {
@@ -218,6 +231,8 @@ void sendData() {
             bool fanOn = doc["fan_on"];
             bool heaterOn = doc["heater_on"];
             bool motorOn = doc["motor_on"];
+            float adsorbPower = doc["adsorb_power"];
+            float regenPower = doc["regen_power"];
 
             // Serial.printf("Response: ok=%d, fan_on=%d, heater_on=%d, motor_on=%d\n", ok, fanOn, heaterOn, motorOn);
 
@@ -228,6 +243,28 @@ void sendData() {
         Serial.printf("Error sending POST: %s\n", http.errorToString(httpResponseCode).c_str());
     }
     http.end();
+  }
+}
+
+void updateHardware() {
+  // Update fan speeds based on received power levels
+  adsorbPower = constrain(adsorbPower, 0.0, 100.0);
+  regenPower = constrain(regenPower, 0.0, 100.0);
+  if (!fanOn) {
+    adsorbPower = 0.0;
+    regenPower = 0.0;
+  }
+  ledcWrite(fanAdsorb_CHANNEL, (uint8_t)(adsorbPower / 100.0 * 255));
+  ledcWrite(fanRegen_CHANNEL, (uint8_t)(regenPower / 100.0 * 255));
+
+  // Update heater dimmer
+  HeaterDimmer.setPower(heaterOn ? 100 : 0);
+
+  // Enable or disable stepper motor
+  if (motorOn) {
+    stepper.runSpeed();
+  } else {
+    stepper.stop();
   }
 }
 

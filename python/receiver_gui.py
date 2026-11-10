@@ -265,7 +265,7 @@ def run_gui():
     btn_all_off.pack(fill="x", pady=(8, 0))
 
     # Initialize button text on GUI load
-    sync_actuator_states()
+    sync_states()
 
     # -------------------------------------------------------------
     # 3. ACTIONS & CONTROLS (Pause, Export, Clear, Abort)
