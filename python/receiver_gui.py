@@ -26,6 +26,8 @@ csv_fields = None         # column order, fixed by the first sample
 fan_on = False
 heater_on = False
 motor_on = False
+adsorb_power = 30.0
+regen_power = 30.0
 
 
 def add_sample(sample: dict) -> dict:
@@ -77,7 +79,9 @@ def receive():
         ok=True,
         fan_on=fan_on,
         heater_on=heater_on,
-        motor_on=motor_on
+        motor_on=motor_on,
+        adsorb_power=adsorb_power,
+        regen_power=regen_power,
     ), 200
 
 
@@ -167,22 +171,42 @@ def run_gui():
     ).pack(anchor="w", pady=(6, 0))
 
     # -------------------------------------------------------------
-    # 2. NUMERIC PARAMETERS (kP, kI, CFM, Water Target)
+    # 2. NUMERIC PARAMETERS (kP, kI, CFM, Water Target) AND MANUAL ACTUATOR CONTROLS (Fan, Motor, Heater, All Off)
     # -------------------------------------------------------------
     param_frame = ttk.LabelFrame(sidebar, text=" Control Inputs ", padding=10)
     param_frame.pack(fill="x", pady=(0, 10))
 
     kp_var = tk.StringVar(value="1.0")
     ki_var = tk.StringVar(value="0.1")
-    cfm_var = tk.StringVar(value="100")
-    water_var = tk.StringVar(value="5.0")
+    adsorb_power_var = tk.StringVar(value="30")
+    regen_power_var = tk.StringVar(value="30")
+    water_var = tk.StringVar(value="7.0")
+    
+    # Tkinter BooleanVars initialized from the outer/global boolean state
+    fan_var = tk.BooleanVar(value=fan_on)
+    motor_var = tk.BooleanVar(value=motor_on)
+    heater_var = tk.BooleanVar(value=heater_on)
+
+    def sync_states():
+        """Updates outer variables and UI labels based on toggle state."""
+        global fan_on, motor_on, heater_on
+        fan_on = fan_var.get()
+        motor_on = motor_var.get()
+        heater_on = heater_var.get()
+        adsorb_power = adsorb_power_var.get()
+        regen_power = regen_power_var.get()
+
+        btn_fan.config(text=f"Fan: {'ON 🟢' if fan_on else 'OFF ⚪'}")
+        btn_motor.config(text=f"Motor: {'ON 🟢' if motor_on else 'OFF ⚪'}")
+        btn_heater.config(text=f"Heater: {'ON 🟢' if heater_on else 'OFF ⚪'}")
 
     # Grid alignment for parameters
     fields = [
         ("kP (Proportional):", kp_var),
         ("kI (Integral):", ki_var),
-        ("CFM Target:", cfm_var),
-        ("Water/Day (gal):", water_var),
+        ("Adsorb Chamber Fan Power:", adsorb_power_var),
+        ("Regeneration Chamber Fan Power:", regen_power_var),
+        ("Target Water/Day (L):", water_var),
     ]
 
     for idx, (label_text, var) in enumerate(fields):
@@ -195,14 +219,53 @@ def run_gui():
 
     def do_send_params():
         # Place code here to transmit parameters to ESP32
+        sync_states()
         messagebox.showinfo(
             "Parameters Updated",
-            f"Sent Parameters:\nkP: {kp_var.get()}\nkI: {ki_var.get()}\nCFM: {cfm_var.get()}\nWater/Day: {water_var.get()}",
+            f"Sent Parameters:\nkP: {kp_var.get()}\nkI: {ki_var.get()}\nAdsorb Power: {adsorb_power_var.get()}\nRegeneration Power: {regen_power_var.get()}\nWater/Day: {water_var.get()}",
         )
 
     ttk.Button(
         param_frame, text="Update Parameters", command=do_send_params
     ).grid(row=len(fields), column=0, columnspan=2, pady=(10, 0), sticky="ew")
+
+    actuator_frame = ttk.LabelFrame(sidebar, text=" Actuator Controls ", padding=10)
+    actuator_frame.pack(fill="x", pady=(0, 10))
+
+    def toggle_fan():
+        fan_var.set(not fan_var.get())
+        sync_states()
+
+    def toggle_motor():
+        motor_var.set(not motor_var.get())
+        sync_states()
+
+    def toggle_heater():
+        heater_var.set(not heater_var.get())
+        sync_states()
+
+    def do_all_off():
+        fan_var.set(False)
+        motor_var.set(False)
+        heater_var.set(False)
+        sync_states()
+
+    btn_fan = ttk.Button(actuator_frame, text="", command=toggle_fan)
+    btn_fan.pack(fill="x", pady=2)
+
+    btn_motor = ttk.Button(actuator_frame, text="", command=toggle_motor)
+    btn_motor.pack(fill="x", pady=2)
+
+    btn_heater = ttk.Button(actuator_frame, text="", command=toggle_heater)
+    btn_heater.pack(fill="x", pady=2)
+
+    btn_all_off = ttk.Button(
+        actuator_frame, text="⚡ ALL OFF", command=do_all_off
+    )
+    btn_all_off.pack(fill="x", pady=(8, 0))
+
+    # Initialize button text on GUI load
+    sync_actuator_states()
 
     # -------------------------------------------------------------
     # 3. ACTIONS & CONTROLS (Pause, Export, Clear, Abort)
