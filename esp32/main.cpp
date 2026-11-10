@@ -9,6 +9,14 @@
 #include <ArduinoJson.h>
 
 
+// PWM Fan Setup
+const int fanAdsorb_PIN = 25;
+const int fanRegen_PIN = 27;
+const int PWM_FREQ = 25000;    // 25 kHz target frequency
+const int fanAdsorb_CHANNEL = 0;     // LEDC channel (0-15)
+const int fanRegen_CHANNEL = 1;       // LEDC channel (0-15)
+const int PWM_RESOLUTION = 8;  // 8-bit resolution (0-255)
+
 // Initialize I2C multiplexer and BME280 sensor
 #define multiplexer 0x70 // I2C address for multiplexer
 Adafruit_BME280 bme;
@@ -23,11 +31,7 @@ AccelStepper stepper(motorInterfaceType, stepPin, dirPin);
 // Dimmer pins
 #define ZC_PIN 13
 #define HEATER_PIN 14
-#define FAN1_PIN 27
-#define FAN2_PIN 26
 dimmerLamp HeaterDimmer(HEATER_PIN, ZC_PIN);
-dimmerLamp Fan1Dimmer(FAN1_PIN, ZC_PIN);
-dimmerLamp Fan2Dimmer(FAN2_PIN, ZC_PIN);
 
 
 // Storage arrays: [temp, pressure, humidity]
@@ -135,6 +139,14 @@ void setup()
     }
   }
 
+  // Initialize PWM for fan control
+  ledcSetup(fanAdsorb_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
+  ledcSetup(fanRegen_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
+  ledcAttachPin(fanAdsorb_PIN, fanAdsorb_CHANNEL);
+  ledcAttachPin(fanRegen_PIN, fanRegen_CHANNEL);
+  ledcWrite(fanAdsorb_CHANNEL, 255);
+  ledcWrite(fanRegen_CHANNEL, 255);
+
   // Initialize stepper motor
   // Set maximum allowable speed threshold (steps per second)
   stepper.setMaxSpeed(1000);
@@ -143,19 +155,15 @@ void setup()
 
   // Initialize dimmers
   HeaterDimmer.begin(NORMAL_MODE, ON);
-  Fan1Dimmer.begin(NORMAL_MODE, ON);
-  Fan2Dimmer.begin(NORMAL_MODE, ON);
-  // Set dimmer levels to 100% power
-  HeaterDimmer.setPower(100);
-  Fan1Dimmer.setPower(100);
-  Fan2Dimmer.setPower(100);
+  // Set dimmer level to 100% power
+  HeaterDimmer.setPower(0);
 }
 
 void loop()
 {
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("Wi-Fi lost, reconnecting...");
-    // connectWiFi();
+    connectWiFi();
   }
   //sensors pull data
   sensorPull(1, sensor1Data[0], sensor1Data[1], sensor1Data[2]);
@@ -167,7 +175,8 @@ void loop()
   // Runs the motor continuously at the constant speed set by setSpeed()
   stepper.runSpeed();
 
-  // sendData();
+  // randomDataTest();
+  sendData();
 
   delay(100);
 }
