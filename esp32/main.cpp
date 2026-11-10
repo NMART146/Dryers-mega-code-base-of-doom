@@ -6,6 +6,7 @@
 #include <RBDdimmer.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
+#include <ArduinoJson.h>
 
 
 // Initialize I2C multiplexer and BME280 sensor
@@ -193,10 +194,29 @@ void sendData() {
     payload += "}";
 
     int httpResponseCode = http.POST(payload);
+
     if (httpResponseCode > 0) {
-      Serial.printf("HTTP Response code: %d\n", httpResponseCode);
+        Serial.printf("HTTP Response code: %d\n", httpResponseCode);
+        
+        String response = http.getString();
+
+        // Allocate JSON document and parse
+        JsonDocument doc; 
+        DeserializationError error = deserializeJson(doc, response);
+
+        if (!error) {
+            bool ok = doc["ok"];
+            bool fanOn = doc["fan_on"];
+            bool heaterOn = doc["heater_on"];
+            bool motorOn = doc["motor_on"];
+
+            // Serial.printf("Response: ok=%d, fan_on=%d, heater_on=%d, motor_on=%d\n", ok, fanOn, heaterOn, motorOn);
+
+        } else {
+            Serial.printf("JSON parse failed: %s\n", error.c_str());
+        }
     } else {
-      Serial.printf("Error sending POST: %s\n", http.errorToString(httpResponseCode).c_str());
+        Serial.printf("Error sending POST: %s\n", http.errorToString(httpResponseCode).c_str());
     }
     http.end();
   }

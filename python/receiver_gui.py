@@ -23,6 +23,9 @@ PLOT_WINDOW = 200  # number of most recent points shown in the plot
 rows = []                 # list of dicts, one per sample
 rows_lock = threading.Lock()
 csv_fields = None         # column order, fixed by the first sample
+fan_on = False
+heater_on = False
+motor_on = False
 
 
 def add_sample(sample: dict) -> dict:
@@ -70,7 +73,12 @@ def receive():
     if not isinstance(payload, dict):
         return jsonify(error="expected a JSON object"), 400
     add_sample(payload)
-    return jsonify(ok=True), 200
+    return jsonify(
+        ok=True,
+        fan_on=fan_on,
+        heater_on=heater_on,
+        motor_on=motor_on
+    ), 200
 
 
 @app.route("/", methods=["GET"])
