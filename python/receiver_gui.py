@@ -29,20 +29,30 @@ motor_on = False
 adsorb_power = 30.0
 regen_power = 30.0
 
+CFM_ADSORB = 0.0
+CFM_REGEN = 0.0
+
 
 def add_sample(sample: dict) -> dict:
     """Store a sample in memory and append it to the CSV."""
-    global csv_fields
+    global csv_fields, CFM_ADSORB, CFM_REGEN
     row = {"time": datetime.now().isoformat(timespec="milliseconds")}
 
     # Flattens nested payload dicts (e.g., {"sensor1": {"temp": 24}} -> {"sensor1_temp": 24})
     for key, val in sample.items():
-        if isinstance(val, dict):
+        # Update global variables when flow keys are encountered
+        if key == "cfmAdsorb":
+            CFM_ADSORB = val
+            row[key] = val
+        elif key == "cfmRegen":
+            CFM_REGEN = val
+            row[key] = val
+        elif isinstance(val, dict):
             for sub_key, sub_val in val.items():
                 row[f"{key}_{sub_key}"] = sub_val
         else:
             row[key] = val
-    
+
     with rows_lock:
         rows.append(row)
         new_file = not os.path.exists(CSV_PATH) or os.path.getsize(CSV_PATH) == 0
@@ -171,7 +181,7 @@ def run_gui():
     ).pack(anchor="w", pady=(6, 0))
 
     # -------------------------------------------------------------
-    # 2. NUMERIC PARAMETERS (kP, kI, CFM, Water Target) AND MANUAL ACTUATOR CONTROLS (Fan, Motor, Heater, All Off)
+    # 2. NUMERIC PARAMETERS (kP, kI, Fan Power, Water Target) AND MANUAL ACTUATOR CONTROLS (Fan, Motor, Heater, All Off)
     # -------------------------------------------------------------
     param_frame = ttk.LabelFrame(sidebar, text=" Control Inputs ", padding=10)
     param_frame.pack(fill="x", pady=(0, 10))
@@ -181,7 +191,11 @@ def run_gui():
     adsorb_power_var = tk.StringVar(value="30")
     regen_power_var = tk.StringVar(value="30")
     water_var = tk.StringVar(value="7.0")
-    
+
+    # StringVars for live CFM telemetry readouts
+    cfm_adsorb_var = tk.StringVar(value=f"{CFM_ADSORB:.2f}")
+    cfm_regen_var = tk.StringVar(value=f"{CFM_REGEN:.2f}")
+
     # Tkinter BooleanVars initialized from the outer/global boolean state
     fan_var = tk.BooleanVar(value=fan_on)
     motor_var = tk.BooleanVar(value=motor_on)
@@ -189,7 +203,7 @@ def run_gui():
 
     def sync_states():
         """Updates outer variables and UI labels based on toggle state."""
-        global fan_on, motor_on, heater_on
+        global fan_on, motor_on, heater_on, adsorb_power, regen_power
         fan_on = fan_var.get()
         motor_on = motor_var.get()
         heater_on = heater_var.get()
@@ -204,9 +218,9 @@ def run_gui():
     fields = [
         ("kP (Proportional):", kp_var),
         ("kI (Integral):", ki_var),
+        ("Target Water/Day (L):", water_var),
         ("Adsorb Chamber Fan Power:", adsorb_power_var),
         ("Regeneration Chamber Fan Power:", regen_power_var),
-        ("Target Water/Day (L):", water_var),
     ]
 
     for idx, (label_text, var) in enumerate(fields):
@@ -216,6 +230,23 @@ def run_gui():
         ttk.Entry(param_frame, textvariable=var, width=10, justify="right").grid(
             row=idx, column=1, sticky="e", pady=4, padx=(8, 0)
         )
+
+    # --- Live CFM Displays (Under Text Fields) ---
+    row_offset = len(fields)
+
+    ttk.Label(param_frame, text="Live Adsorb Flow (CFM):", font=("Helvetica", 9, "bold")).grid(
+        row=row_offset, column=0, sticky="w", pady=(8, 2)
+    )
+    ttk.Label(param_frame, textvariable=cfm_adsorb_var, font=("Helvetica", 9, "bold"), foreground="#007ACC").grid(
+        row=row_offset, column=1, sticky="e", pady=(8, 2), padx=(8, 0)
+    )
+
+    ttk.Label(param_frame, text="Live Regen Flow (CFM):", font=("Helvetica", 9, "bold")).grid(
+        row=row_offset + 1, column=0, sticky="w", pady=2
+    )
+    ttk.Label(param_frame, textvariable=cfm_regen_var, font=("Helvetica", 9, "bold"), foreground="#007ACC").grid(
+        row=row_offset + 1, column=1, sticky="e", pady=2, padx=(8, 0)
+    )
 
     def do_send_params():
         # Place code here to transmit parameters to ESP32
@@ -227,7 +258,7 @@ def run_gui():
 
     ttk.Button(
         param_frame, text="Update Parameters", command=do_send_params
-    ).grid(row=len(fields), column=0, columnspan=2, pady=(10, 0), sticky="ew")
+    ).grid(row=row_offset + 2, column=0, columnspan=2, pady=(10, 0), sticky="ew")
 
     actuator_frame = ttk.LabelFrame(sidebar, text=" Actuator Controls ", padding=10)
     actuator_frame.pack(fill="x", pady=(0, 10))
@@ -296,15 +327,6 @@ def run_gui():
             with rows_lock:
                 rows.clear()
 
-    def do_abort():
-        if messagebox.askyesno(
-            "EMERGENCY ABORT",
-            "Are you sure you want to trigger emergency abort?",
-            icon="warning",
-        ):
-            print("🚨 ABORT SIGNAL SENT")
-            # Implement your ESP32 stop/abort payload transmission here
-
     ttk.Checkbutton(actions_frame, text="Pause Graphs", variable=paused).pack(
         anchor="w", pady=(0, 6)
     )
@@ -314,17 +336,6 @@ def run_gui():
     ttk.Button(actions_frame, text="Clear Plot Memory", command=do_clear).pack(
         fill="x", pady=2
     )
-
-    # Highlighted Abort Button
-    style.configure(
-        "Abort.TButton", font=("Segoe UI", 9, "bold"), foreground="#d9534f"
-    )
-    ttk.Button(
-        actions_frame,
-        text="🛑 ABORT PROCESS",
-        style="Abort.TButton",
-        command=do_abort,
-    ).pack(fill="x", pady=(12, 0))
 
     # -------------------------------------------------------------
     # 4. TRIPLE SUBPLOT CANVAS (Temp, Pressure, Humidity)

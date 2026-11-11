@@ -9,13 +9,67 @@
 #include <ArduinoJson.h>
 
 
-// PWM Fan Setup
+//******************** PWM Fan Setup ********************//
+
 const int fanAdsorb_PIN = 25;
 const int fanRegen_PIN = 27;
 const int PWM_FREQ = 25000;    // 25 kHz target frequency
 const int fanAdsorb_CHANNEL = 0;     // LEDC channel (0-15)
 const int fanRegen_CHANNEL = 1;       // LEDC channel (0-15)
 const int PWM_RESOLUTION = 8;  // 8-bit resolution (0-255)
+
+float cfmAdsorb = 0;
+float cfmRegen = 0;
+
+// Tachometer Pin Assignments
+const int fanAdsorb_TACHO_PIN = 35;
+const int fanRegen_TACHO_PIN = 26;
+
+// Volatile pulse counters
+volatile unsigned long pulseCountAdsorb = 0;
+volatile unsigned long pulseCountRegen = 0;
+
+// Shared lock for critical section
+portMUX_TYPE tachoMux = portMUX_INITIALIZER_UNLOCKED;
+
+// Interrupt Service Routine for Fan 1 (Adsorb)
+void IRAM_ATTR tachoISR1() {
+  portENTER_CRITICAL_ISR(&tachoMux);
+  pulseCountAdsorb++;
+  portEXIT_CRITICAL_ISR(&tachoMux);
+}
+
+// Interrupt Service Routine for Fan 2 (Regen)
+void IRAM_ATTR tachoISR2() {
+  portENTER_CRITICAL_ISR(&tachoMux);
+  pulseCountRegen++;
+  portEXIT_CRITICAL_ISR(&tachoMux);
+}
+
+void processFanSpeeds() {
+  // Atomic copy and reset for both counts simultaneously
+  portENTER_CRITICAL(&tachoMux);
+  unsigned long count1 = pulseCountAdsorb;
+  unsigned long count2 = pulseCountRegen;
+  pulseCountAdsorb = 0;
+  pulseCountRegen = 0;
+  portEXIT_CRITICAL(&tachoMux);
+
+  // Calculate RPM for both fans (count * 60 / 2) for 2 pulses per revolution
+  int rpmAdsorb = (int)(count1 * 60 / 2);
+  int rpmRegen = (int)(count2 * 60 / 2);
+
+  // Assuming 2200 max RPM and 32.666 max CFM from Noctua's specs for NF-A8 PWM, calculate/estimate CFM for both fans
+  cfmAdsorb = (float)(32.666 * rpmAdsorb / 2200);
+  cfmRegen = (float)(32.666 * rpmRegen / 2200);
+
+  // Serial.printf("Fan 1: %d RPM | Fan 2: %d RPM\n", rpmAdsorb, rpmRegen);
+  // Serial.printf("Fan 1: %d CFM | Fan 2: %d CFM\n", cfmAdsorb, cfmRegen);
+}
+
+//*******************************************************//
+
+//************* Sensors Setup and Variables *************//
 
 // Initialize I2C multiplexer and BME280 sensor
 #define multiplexer 0x70 // I2C address for multiplexer
@@ -54,6 +108,10 @@ bool motorOn = false;
 float adsorbPower = 30.0;
 float regenPower = 30.0;
 
+//*******************************************************//
+
+//********************** WIFI Setup *********************//
+
 // WIFI Setup (setup specific to Mines network)
 const char* SSID         = "Mines";
 const char* EAP_IDENTITY = "email@mines.edu"; // mines email
@@ -66,6 +124,7 @@ const unsigned long SEND_INTERVAL_MS = 1000;  // how often to send a sample
 HTTPClient http;
 unsigned long lastSend = 0;
 
+// Generate random sensor data for network testing purposes
 void randomDataTest() {
   sensor1Data[0] = 20.0  + (random(0, 500)  / 100.0);  // Temp: 20.0 - 25.0 °C
   sensor1Data[1] = 980.0 + (random(0, 5000) / 100.0);  // Pressure: 980.0 - 1030.0 hPa
@@ -105,6 +164,9 @@ void connectWiFi() {
 
 void sendData();
 
+//*******************************************************//
+
+//******************* Misc. Functions *******************//
 
 // Helper function to switch the active multiplexer channel (0 through 7)
 void tcaselect(uint8_t bus) {
@@ -114,7 +176,7 @@ void tcaselect(uint8_t bus) {
   Wire.endTransmission();
 }
 
-// Functions
+// Function Declarations
 void sensorPull(uint8_t channel, float &temp, float &pressure, float &humidity);
 void updateHardware();
 
@@ -125,6 +187,11 @@ void thetaDotToStepsPerSecond(float &theta_dot) {
   float steps_per_second = (theta_dot / (2 * PI)) * steps_per_revolution;
   stepper.setSpeed(steps_per_second);
 }
+
+//*******************************************************//
+//*******************************************************//
+
+//********************* ESP32 Setup *********************//
 
 void setup()
 {
@@ -154,6 +221,14 @@ void setup()
   ledcWrite(fanAdsorb_CHANNEL, 255);
   ledcWrite(fanRegen_CHANNEL, 255);
 
+  // Configure Fan 1 (Adsorb) Interrupt
+  pinMode(fanAdsorb_TACHO_PIN, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(fanAdsorb_TACHO_PIN), tachoISR1, FALLING);
+
+  // Configure Fan 2 (Regen) Interrupt
+  pinMode(fanRegen_TACHO_PIN, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(fanRegen_TACHO_PIN), tachoISR2, FALLING);
+
   // Initialize stepper motor
   // Set maximum allowable speed threshold (steps per second)
   stepper.setMaxSpeed(1000);
@@ -165,6 +240,10 @@ void setup()
   // Set dimmer level to 100% power
   HeaterDimmer.setPower(0);
 }
+
+//*******************************************************//
+
+//******************* ESP32 Main Loop *******************//
 
 // Loop Timing
 unsigned long lastLoopTime = 0;
@@ -186,13 +265,18 @@ void loop()
 
     // randomDataTest();
     sendData();
+
     float theta_dot = massFlowWaterToThetaDotTransfer(desired_m_water);
     thetaDotToStepsPerSecond(theta_dot); // set stepper speed based on calculated theta_dot
   }
 
   updateHardware();
-
 }
+
+//*******************************************************//
+//*******************************************************//
+
+//********* Sensor, Wifi, and Hardware Functions ********//
 
 void sensorPull(uint8_t channel, float &temp, float &pressure, float &humidity) {
   tcaselect(channel); // Switch multiplexer to target channel
@@ -208,8 +292,12 @@ void sendData() {
     http.begin(SERVER_URL);
     http.addHeader("Content-Type", "application/json");
 
+    processFanSpeeds(); // Get the fan RPMs and calculate CFM values
+
     // Create JSON payload
     String payload = "{";
+    payload += "\"cfmAdsorb\": " + String(cfmAdsorb) + ",";
+    payload += "\"cfmRegen\": " + String(cfmRegen) + ",";
     payload += "\"sensor1\": {\"temp\": " + String(sensor1Data[0]) + ", \"pressure\": " + String(sensor1Data[1]) + ", \"humidity\": " + String(sensor1Data[2]) + "},";
     payload += "\"sensor2\": {\"temp\": " + String(sensor2Data[0]) + ", \"pressure\": " + String(sensor2Data[1]) + ", \"humidity\": " + String(sensor2Data[2]) + "},";
     payload += "\"sensor3\": {\"temp\": " + String(sensor3Data[0]) + ", \"pressure\": " + String(sensor3Data[1]) + ", \"humidity\": " + String(sensor3Data[2]) + "}";
@@ -267,6 +355,10 @@ void updateHardware() {
     stepper.stop();
   }
 }
+
+//*******************************************************//
+
+//******************* Control Systems *******************//
 
 float massFlowWaterToThetaDotTransfer(float desired_flow)
 {
