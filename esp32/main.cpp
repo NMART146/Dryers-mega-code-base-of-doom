@@ -346,7 +346,7 @@ void updateHardware() {
   ledcWrite(fanRegen_CHANNEL, (uint8_t)(regenPower / 100.0 * 255));
 
   // Update heater dimmer
-  HeaterDimmer.setPower(heaterOn ? 100 : 0);
+  HeaterDimmer.setPower(heaterOn ? heaterControl(sensor1Data[1]) : 0);
 
   // Enable or disable stepper motor
   if (motorOn) {
@@ -391,7 +391,7 @@ double heaterControl(double T_in)
   static double T_prev = 0.0;
   static double V_prev = 0.0;
 
-  double Ts = 0.1; //sampling time
+  double Ts = LOOP_INTERVAL_MS/1000; //sampling time
 
   //rise time is 20 sec, settle time is 57 sec, overshoot is 5%
   double zeta = 0.7;
@@ -411,6 +411,6 @@ double heaterControl(double T_in)
   T_prev = T_in;
   V_prev = V_out;
 
-  return V_out;
+  return V_out/110;
 
 }
