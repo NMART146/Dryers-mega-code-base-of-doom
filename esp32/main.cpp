@@ -68,7 +68,7 @@ void processFanSpeeds(unsigned long dt_ms) {
 
 // Initialize I2C multiplexer and BME280 sensor
 #define multiplexer 0x70 // I2C address for multiplexer
-Adafruit_BME280 bme;
+Adafruit_BME280 bme[3];
 
 // Stepper pins
 #define stepPin 33
@@ -217,7 +217,7 @@ void setup()
   // Initialize sensors on multiplexer channels 0, 1, and 2
   for (uint8_t channel = 0; channel < 3; channel++) {
     tcaselect(channel);
-    if (!bme.begin(0x76, &Wire)) { 
+    if (!bme[channel].begin(0x76, &Wire)) {
       Serial.printf("BME280 not found on channel %d\n", channel);
     } else {
       Serial.printf("BME280 initialized on channel %d\n", channel);
@@ -307,9 +307,9 @@ void loop() {
 void sensorPull(uint8_t channel, float &temp, float &pressure, float &humidity) {
   tcaselect(channel); // Switch multiplexer to target channel
 
-  temp = bme.readTemperature();
-  pressure = bme.readPressure();
-  humidity = bme.readHumidity();
+  temp = bme[channel].readTemperature();
+  pressure = bme[channel].readPressure();
+  humidity = bme[channel].readHumidity();
 }
 
 void networkTask(void *) {
