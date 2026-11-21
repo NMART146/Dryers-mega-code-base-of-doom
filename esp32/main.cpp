@@ -46,8 +46,7 @@ void IRAM_ATTR tachoISR2() {
   portEXIT_CRITICAL_ISR(&tachoMux);
 }
 
-void processFanSpeeds() {
-  // Atomic copy and reset for both counts simultaneously
+void processFanSpeeds(unsigned long dt_ms) {
   portENTER_CRITICAL(&tachoMux);
   unsigned long count1 = pulseCountAdsorb;
   unsigned long count2 = pulseCountRegen;
@@ -55,16 +54,12 @@ void processFanSpeeds() {
   pulseCountRegen = 0;
   portEXIT_CRITICAL(&tachoMux);
 
-  // Calculate RPM for both fans (count * 60 / 2) for 2 pulses per revolution
-  int rpmAdsorb = (int)(count1 * 60 / 2);
-  int rpmRegen = (int)(count2 * 60 / 2);
+  // pulses / (2 pulses per rev) / (dt in minutes)
+  int rpmAdsorb = (int)(count1 * 60000UL / (2UL * dt_ms));
+  int rpmRegen  = (int)(count2 * 60000UL / (2UL * dt_ms));
 
-  // Assuming 2200 max RPM and 32.666 max CFM from Noctua's specs for NF-A8 PWM, calculate/estimate CFM for both fans
-  cfmAdsorb = (float)(32.666 * rpmAdsorb / 2200);
-  cfmRegen = (float)(32.666 * rpmRegen / 2200);
-
-  // Serial.printf("Fan 1: %d RPM | Fan 2: %d RPM\n", rpmAdsorb, rpmRegen);
-  // Serial.printf("Fan 1: %d CFM | Fan 2: %d CFM\n", cfmAdsorb, cfmRegen);
+  cfmAdsorb = 32.666f * rpmAdsorb / 2200.0f;
+  cfmRegen  = 32.666f * rpmRegen  / 2200.0f;
 }
 
 //*******************************************************//
@@ -78,7 +73,6 @@ Adafruit_BME280 bme;
 // Stepper pins
 #define stepPin 33
 #define dirPin 32
-#define enablePin 25
 #define motorInterfaceType 1
 AccelStepper stepper(motorInterfaceType, stepPin, dirPin);
 
@@ -102,11 +96,21 @@ float h = 31125; //fabric mass enthalpy
 float desired_m_water = 0.081; //desired water mass flow rate (g/s); equiv to 7L/day
 
 // Control parameters
-bool fanOn = true;
-bool heaterOn = false;
-bool motorOn = false;
-float adsorbPower = 30.0;
-float regenPower = 30.0;
+struct Telemetry {
+  float cfmAdsorb, cfmRegen;
+  float s[3][3];            // [sensor][temp, pressure, humidity]
+};
+struct Commands {
+  bool fanOn, heaterOn, motorOn;
+  float adsorbPower, regenPower;
+};
+
+Telemetry telem = {};
+Commands  cmd   = {true, false, false, 30.0f, 30.0f};
+SemaphoreHandle_t dataMutex;
+
+Commands localCmd = {true, false, false, 30.0f, 30.0f};   // add
+float heaterPct = 0;
 
 //*******************************************************//
 
@@ -162,7 +166,7 @@ void connectWiFi() {
   }
 }
 
-void sendData();
+void networkTask(void *);
 
 //*******************************************************//
 
@@ -181,6 +185,12 @@ void sensorPull(uint8_t channel, float &temp, float &pressure, float &humidity);
 void updateHardware();
 
 void thetaDotToStepsPerSecond(float &theta_dot) {
+  // Guard against NaN or negative angular velocities
+  if (isnan(theta_dot) || theta_dot < 0.0f) {
+    stepper.setSpeed(0.0f); // Safely halt the motor instead of holding the previous speed
+    return;
+  }
+
   // Convert theta_dot (rad/s) to steps per second for the stepper motor
   // Assuming 200 steps per revolution and a gear ratio of 1:1
   float steps_per_revolution = 200.0;
@@ -200,6 +210,7 @@ void setup()
   delay(500);
   connectWiFi();
   http.setReuse(true);  // keep the TCP connection open between samples
+  dataMutex = xSemaphoreCreateMutex();
   delay(500);
   Wire.begin();
 
@@ -239,6 +250,8 @@ void setup()
   HeaterDimmer.begin(NORMAL_MODE, ON);
   // Set dimmer level to 100% power
   HeaterDimmer.setPower(0);
+
+  xTaskCreatePinnedToCore(networkTask, "net", 8192, NULL, 1, NULL, 0);
 }
 
 //*******************************************************//
@@ -246,31 +259,44 @@ void setup()
 //******************* ESP32 Main Loop *******************//
 
 // Loop Timing
-unsigned long lastLoopTime = 0;
+unsigned long lastLoopTime = millis();
 const unsigned long LOOP_INTERVAL_MS = 100;  // 100 ms loop interval
-void loop()
-{
-  unsigned long currentTime = millis();
-  if (currentTime - lastLoopTime >= LOOP_INTERVAL_MS) {
-    lastLoopTime = currentTime;
+void loop() {
+  unsigned long now = millis();
+  if (now - lastLoopTime >= LOOP_INTERVAL_MS) {
+    lastLoopTime += LOOP_INTERVAL_MS;      // += avoids drift (not = now)
 
-    if (WiFi.status() != WL_CONNECTED) {
-      Serial.println("Wi-Fi lost, reconnecting...");
-      connectWiFi();
-    }
-    //sensors pull data
-    sensorPull(1, sensor1Data[0], sensor1Data[1], sensor1Data[2]);
-    sensorPull(2, sensor2Data[0], sensor2Data[1], sensor2Data[2]);
-    sensorPull(3, sensor3Data[0], sensor3Data[1], sensor3Data[2]);
-
-    // randomDataTest();
-    sendData();
+    sensorPull(0, sensor1Data[0], sensor1Data[1], sensor1Data[2]);
+    sensorPull(1, sensor2Data[0], sensor2Data[1], sensor2Data[2]);
+    sensorPull(2, sensor3Data[0], sensor3Data[1], sensor3Data[2]);
 
     float theta_dot = massFlowWaterToThetaDotTransfer(desired_m_water);
-    thetaDotToStepsPerSecond(theta_dot); // set stepper speed based on calculated theta_dot
+    thetaDotToStepsPerSecond(theta_dot);
+
+    // Publish telemetry
+    xSemaphoreTake(dataMutex, portMAX_DELAY);
+    localCmd = cmd;
+    memcpy(telem.s[0], sensor1Data, sizeof(sensor1Data));
+    memcpy(telem.s[1], sensor2Data, sizeof(sensor2Data));
+    memcpy(telem.s[2], sensor3Data, sizeof(sensor3Data));
+    telem.cfmAdsorb = cfmAdsorb;
+    telem.cfmRegen  = cfmRegen;
+    xSemaphoreGive(dataMutex);
+
+    heaterPct = localCmd.heaterOn
+      ? constrain(heaterControl(sensor1Data[0]) * 100.0, 0.0, 100.0)
+      : 0.0;
   }
 
-  updateHardware();
+
+  static unsigned long lastTach = millis();
+  unsigned long dt = millis() - lastTach;
+  if (dt >= 1000) {
+    processFanSpeeds(dt);
+    lastTach = millis();
+  }
+
+  updateHardware();    // reads a local copy of cmd, then does the same as before
 }
 
 //*******************************************************//
@@ -286,70 +312,70 @@ void sensorPull(uint8_t channel, float &temp, float &pressure, float &humidity) 
   humidity = bme.readHumidity();
 }
 
-void sendData() {
-  if (WiFi.status() == WL_CONNECTED && millis() - lastSend >= SEND_INTERVAL_MS) {
-    lastSend = millis();
+void networkTask(void *) {
+  for (;;) {
+    if (WiFi.status() != WL_CONNECTED) {
+      connectWiFi();                       // blocking is fine here, control loop is unaffected
+      vTaskDelay(pdMS_TO_TICKS(1000));
+      continue;
+    }
+
+    // Snapshot telemetry
+    Telemetry t;
+    xSemaphoreTake(dataMutex, portMAX_DELAY);
+    t = telem;
+    xSemaphoreGive(dataMutex);
+
+    char payload[400];
+    snprintf(payload, sizeof(payload),
+      "{\"cfmAdsorb\":%.2f,\"cfmRegen\":%.2f,"
+      "\"sensor1\":{\"temp\":%.2f,\"pressure\":%.2f,\"humidity\":%.2f},"
+      "\"sensor2\":{\"temp\":%.2f,\"pressure\":%.2f,\"humidity\":%.2f},"
+      "\"sensor3\":{\"temp\":%.2f,\"pressure\":%.2f,\"humidity\":%.2f}}",
+      t.cfmAdsorb, t.cfmRegen,
+      t.s[0][0], t.s[0][1], t.s[0][2],
+      t.s[1][0], t.s[1][1], t.s[1][2],
+      t.s[2][0], t.s[2][1], t.s[2][2]);
+
     http.begin(SERVER_URL);
+    http.setTimeout(2000);                 // don't hang forever on a dead server
     http.addHeader("Content-Type", "application/json");
+    int code = http.POST(payload);
 
-    processFanSpeeds(); // Get the fan RPMs and calculate CFM values
-
-    // Create JSON payload
-    String payload = "{";
-    payload += "\"cfmAdsorb\": " + String(cfmAdsorb) + ",";
-    payload += "\"cfmRegen\": " + String(cfmRegen) + ",";
-    payload += "\"sensor1\": {\"temp\": " + String(sensor1Data[0]) + ", \"pressure\": " + String(sensor1Data[1]) + ", \"humidity\": " + String(sensor1Data[2]) + "},";
-    payload += "\"sensor2\": {\"temp\": " + String(sensor2Data[0]) + ", \"pressure\": " + String(sensor2Data[1]) + ", \"humidity\": " + String(sensor2Data[2]) + "},";
-    payload += "\"sensor3\": {\"temp\": " + String(sensor3Data[0]) + ", \"pressure\": " + String(sensor3Data[1]) + ", \"humidity\": " + String(sensor3Data[2]) + "}";
-    payload += "}";
-
-    int httpResponseCode = http.POST(payload);
-
-    if (httpResponseCode > 0) {
-        Serial.printf("HTTP Response code: %d\n", httpResponseCode);
-        
-        String response = http.getString();
-
-        // Allocate JSON document and parse
-        JsonDocument doc; 
-        DeserializationError error = deserializeJson(doc, response);
-
-        if (!error) {
-            bool ok = doc["ok"];
-            bool fanOn = doc["fan_on"];
-            bool heaterOn = doc["heater_on"];
-            bool motorOn = doc["motor_on"];
-            float adsorbPower = doc["adsorb_power"];
-            float regenPower = doc["regen_power"];
-
-            // Serial.printf("Response: ok=%d, fan_on=%d, heater_on=%d, motor_on=%d\n", ok, fanOn, heaterOn, motorOn);
-
-        } else {
-            Serial.printf("JSON parse failed: %s\n", error.c_str());
-        }
+    if (code > 0) {
+      JsonDocument doc;
+      if (!deserializeJson(doc, http.getString())) {
+        xSemaphoreTake(dataMutex, portMAX_DELAY);
+        cmd.fanOn       = doc["fan_on"]       | cmd.fanOn;
+        cmd.heaterOn    = doc["heater_on"]    | cmd.heaterOn;
+        cmd.motorOn     = doc["motor_on"]     | cmd.motorOn;
+        cmd.adsorbPower = doc["adsorb_power"] | cmd.adsorbPower;
+        cmd.regenPower  = doc["regen_power"]  | cmd.regenPower;
+        xSemaphoreGive(dataMutex);
+      }
     } else {
-        Serial.printf("Error sending POST: %s\n", http.errorToString(httpResponseCode).c_str());
+      Serial.printf("POST error: %s\n", http.errorToString(code).c_str());
     }
     http.end();
+
+    vTaskDelay(pdMS_TO_TICKS(SEND_INTERVAL_MS));
   }
 }
 
 void updateHardware() {
-  // Update fan speeds based on received power levels
-  adsorbPower = constrain(adsorbPower, 0.0, 100.0);
-  regenPower = constrain(regenPower, 0.0, 100.0);
-  if (!fanOn) {
-    adsorbPower = 0.0;
-    regenPower = 0.0;
-  }
-  ledcWrite(fanAdsorb_CHANNEL, (uint8_t)(adsorbPower / 100.0 * 255));
-  ledcWrite(fanRegen_CHANNEL, (uint8_t)(regenPower / 100.0 * 255));
+  Commands c;
+  xSemaphoreTake(dataMutex, portMAX_DELAY);
+  c = cmd;
+  xSemaphoreGive(dataMutex);
 
-  // Update heater dimmer
-  HeaterDimmer.setPower(heaterOn ? heaterControl(sensor1Data[1]) : 0);
+  float adsorb = c.fanOn ? constrain(c.adsorbPower, 0.0f, 100.0f) : 0.0f;
+  float regen  = c.fanOn ? constrain(c.regenPower,  0.0f, 100.0f) : 0.0f;
+  ledcWrite(fanAdsorb_CHANNEL, (uint8_t)(adsorb / 100.0f * 255));
+  ledcWrite(fanRegen_CHANNEL,  (uint8_t)(regen  / 100.0f * 255));
 
-  // Enable or disable stepper motor
-  if (motorOn) {
+  HeaterDimmer.setPower((int)(heaterPct));
+
+  if (c.motorOn) {
     stepper.runSpeed();
   } else {
     stepper.stop();
@@ -391,7 +417,7 @@ double heaterControl(double T_in)
   static double T_prev = 0.0;
   static double V_prev = 0.0;
 
-  double Ts = LOOP_INTERVAL_MS/1000; //sampling time
+  double Ts = LOOP_INTERVAL_MS/1000.0; //sampling time
 
   //rise time is 20 sec, settle time is 57 sec, overshoot is 5%
   double zeta = 0.7;
