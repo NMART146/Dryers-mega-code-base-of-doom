@@ -208,7 +208,7 @@ void thetaDotToStepsPerSecond(float &theta_dot) {
 void setup()
 {
   Serial.begin(115200);
-  while (!Serial);
+  // while (!Serial);
   delay(500);
   connectWiFi();
   http.setReuse(true);  // keep the TCP connection open between samples
@@ -345,9 +345,10 @@ void networkTask(void *) {
     http.addHeader("Content-Type", "application/json");
     int code = http.POST(payload);
 
-    if (code > 0) {
+    if (code == HTTP_CODE_OK) {
       JsonDocument doc;
-      if (!deserializeJson(doc, http.getString())) {
+      DeserializationError err = deserializeJson(doc, http.getStream());
+      if (!err) {
         xSemaphoreTake(dataMutex, portMAX_DELAY);
         cmd.fanOn       = doc["fan_on"]       | cmd.fanOn;
         cmd.heaterOn    = doc["heater_on"]    | cmd.heaterOn;
@@ -355,7 +356,11 @@ void networkTask(void *) {
         cmd.adsorbPower = doc["adsorb_power"] | cmd.adsorbPower;
         cmd.regenPower  = doc["regen_power"]  | cmd.regenPower;
         xSemaphoreGive(dataMutex);
+      } else {
+        Serial.printf("JSON error: %s\n", err.c_str());
       }
+    } else if (code > 0) {
+      Serial.printf("HTTP status %d\n", code);
     } else {
       Serial.printf("POST error: %s\n", http.errorToString(code).c_str());
     }
