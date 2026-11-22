@@ -183,6 +183,8 @@ void tcaselect(uint8_t bus) {
 // Function Declarations
 void sensorPull(uint8_t channel, float &temp, float &pressure, float &humidity);
 void updateHardware();
+float massFlowWaterToThetaDotTransfer(float desired_flow, float regenFanPercent);
+double heaterControl(double temp);
 
 void thetaDotToStepsPerSecond(float &theta_dot) {
   // Guard against NaN or negative angular velocities
@@ -275,7 +277,7 @@ void loop() {
     // Publish telemetry
     xSemaphoreTake(dataMutex, portMAX_DELAY);
     localCmd = cmd;
-    float theta_dot = massFlowWaterToThetaDotTransfer(desired_m_water,localCmd.regenPower);
+    float theta_dot = massFlowWaterToThetaDotTransfer(desired_m_water, localCmd.regenPower);
     thetaDotToStepsPerSecond(theta_dot);
     memcpy(telem.s[0], sensor1Data, sizeof(sensor1Data));
     memcpy(telem.s[1], sensor2Data, sizeof(sensor2Data));
@@ -396,7 +398,7 @@ float massFlowWaterToThetaDotTransfer(float desired_flow, float regenFanPercent)
 
   float m_air = regenFanPercent*32.66*2.0*0.47195;// L/s of air for both fans
   float omega_3 = sensor3Data[2]; //humidity at state 3 (updated every cycle)
-  float omega_4 = sensor4Data[2]; //humidity at state 4 (updated every cycle)
+  float omega_4 = sensor2Data[2]; //humidity at state 4 (updated every cycle)
   float theta_dot = (30 * (omega_3 - omega_4) * PI * PI * pow(r,2)*rho*h*omega_dot)/
   ((omega_3-omega_4)*(m_air*(omega_3-omega_4)+30*PI*pow(r,2)*rho*h*omega_3));
   
