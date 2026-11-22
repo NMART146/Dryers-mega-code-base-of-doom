@@ -184,7 +184,7 @@ void tcaselect(uint8_t bus) {
 void sensorPull(uint8_t channel, float &temp, float &pressure, float &humidity);
 void updateHardware();
 float massFlowWaterToThetaDotTransfer(float desired_flow, float regenFanPercent);
-double heaterControl(double temp);
+double heaterControl(double temp,double sens);
 
 void thetaDotToStepsPerSecond(float &theta_dot) {
   // Guard against NaN or negative angular velocities
@@ -287,7 +287,7 @@ void loop() {
     xSemaphoreGive(dataMutex);
 
     heaterPct = localCmd.heaterOn
-      ? constrain(heaterControl(sensor1Data[0]) * 100.0, 0.0, 100.0)
+      ? constrain(heaterControl(60,sensor1Data[0]) * 100.0, 0.0, 100.0)
       : 0.0;
   }
 
@@ -376,7 +376,19 @@ void updateHardware() {
   ledcWrite(fanAdsorb_CHANNEL, (uint8_t)(adsorb / 100.0f * 255));
   ledcWrite(fanRegen_CHANNEL,  (uint8_t)(regen  / 100.0f * 255));
 
-  HeaterDimmer.setPower((int)(heaterPct));
+  if(c.heaterOn != false)
+  {
+    int targetPct = constrain((int)heaterPct, 0, 100);
+    if (targetPct != lastHeaterPct) {
+      HeaterDimmer.setPower(targetPct);
+      lastHeaterPct = targetPct;
+    }
+  }
+  else
+  {
+    HeaterDimmer.setPower(0);
+    lastHeaterPct = 0;
+  }
 
   if (c.motorOn) {
     stepper.runSpeed();
@@ -413,35 +425,28 @@ float massFlowWaterToThetaDotTransfer(float desired_flow, float regenFanPercent)
   return theta_dot;
 }
 
-double heaterControl(double T_in)
+double heaterControl(double T_in, double T_sensor)
 {
-  //h_air = dependent on flow rate of air through fans
-  //A_heater = area of heater surface
-  static double T_prev = 0.0; //C
-  static double V_prev = 0.0; //Volts
-  static double A_heater = 0.0056; //m^2
-  static double h_air = 21.3; //kJ/kg
+  static double e_prev = 0.0;
+  static double perc_prev = 0.0; //all perc vars are percent of full power of heater
+  const double A_heater = 0.0056; // m^2
+  const double h_conv = 21.3; // W/(m^2*K) convective coeff
+  const double C_th = 50.0; // J/K thermal capacity
+  const double P_max = 440.0; // heater power @ 100%
+  const double Ts = LOOP_INTERVAL_MS / 1000.0; // 0.1 s
+  const double zeta = 0.7; //damping ratio
+  const double omega_n = 0.147; // natty freakquency for tr=15s ts=43s
 
-  double Ts = LOOP_INTERVAL_MS/1000.0; //sampling time ms
+  const double kp = max(0.0, (2.0 * zeta * omega_n * C_th - h_conv * A_heater) / P_max); // prop gain
+  const double ki = (C_th * omega_n * omega_n) / P_max; //integ gain
 
-  //rise time is 20 sec, settle time is 57 sec, overshoot is 5%
-  double zeta = 0.7;
-  double omega_n = 0.11;
-  double kp = 8.8/pow(2.2/omega_n,2)-1/(h_air*A_heater);
-  double ki = pow(omega_n,2);
+  double err = T_in - T_sensor; //temp error
+  double b0 = kp + 0.5 * ki * Ts;
+  double b1 = 0.5 * ki * Ts - kp;
+  double perc_out = constrain(perc_prev + b0 * err + b1 * e_prev, 0.0, 1.0); //updating our percent power with constraint so it doesnt explode
 
-  double C = (1.0 / (h_air * A_heater)) + kp;
-  double D = 8.0 * C + 4.0 * ki * Ts;
-
-  double b0 = (2.0 * kp + ki * Ts) / D;
-  double b1 = (ki * Ts - 2.0 * kp) / D;
-  double a1 = (4.0 * ki * Ts - 8.0 * C) / D;
-
-  double V_out = b0 * T_in + b1 * T_prev - a1 * V_prev;
-
-  T_prev = T_in;
-  V_prev = V_out;
-
-  return V_out/110;
-
+  e_prev = err; //pretty obv tbh
+  perc_prev = perc_out; //also obv
+  
+  return perc_out;
 }
