@@ -393,7 +393,7 @@ float massFlowWaterToThetaDotTransfer(float desired_flow)
 	//r, pi, rho, h, omega_desmax, t_test all constants
 	//other vars will be collected with state sensors
 
-  
+  float m_air = ;//dependent on fan rate unless we just approximate
   float omega_3 = sensor3Data[2]; //humidity at state 3 (updated every cycle)
   float omega_4 = sensor4Data[2]; //humidity at state 4 (updated every cycle)
   float theta_dot = (30 * (omega_3 - omega_4) * PI * PI * pow(r,2)*rho*h*omega_dot)/
@@ -414,16 +414,18 @@ double heaterControl(double T_in)
 {
   //h_air = dependent on flow rate of air through fans
   //A_heater = area of heater surface
-  static double T_prev = 0.0;
-  static double V_prev = 0.0;
+  static double T_prev = 0.0; //C
+  static double V_prev = 0.0; //Volts
+  static double A_heater = 0.0056; //m^2
+  static double h_air = 21.3; //kJ/kg
 
-  double Ts = LOOP_INTERVAL_MS/1000.0; //sampling time
+  double Ts = LOOP_INTERVAL_MS/1000.0; //sampling time ms
 
   //rise time is 20 sec, settle time is 57 sec, overshoot is 5%
   double zeta = 0.7;
   double omega_n = 0.11;
-  double kp = 8.8/(2.2/omega_n)**2-1/(h_air*A_heater);
-  double ki = omega_n**2;
+  double kp = 8.8/pow(2.2/omega_n,2)-1/(h_air*A_heater);
+  double ki = pow(omega_n,2);
 
   double C = (1.0 / (h_air * A_heater)) + kp;
   double D = 8.0 * C + 4.0 * ki * Ts;
