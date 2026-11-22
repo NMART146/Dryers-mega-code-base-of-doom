@@ -270,12 +270,13 @@ void loop() {
     sensorPull(1, sensor2Data[0], sensor2Data[1], sensor2Data[2]);
     sensorPull(2, sensor3Data[0], sensor3Data[1], sensor3Data[2]);
 
-    float theta_dot = massFlowWaterToThetaDotTransfer(desired_m_water);
-    thetaDotToStepsPerSecond(theta_dot);
+    
 
     // Publish telemetry
     xSemaphoreTake(dataMutex, portMAX_DELAY);
     localCmd = cmd;
+    float theta_dot = massFlowWaterToThetaDotTransfer(desired_m_water,localCmd.regenPower);
+    thetaDotToStepsPerSecond(theta_dot);
     memcpy(telem.s[0], sensor1Data, sizeof(sensor1Data));
     memcpy(telem.s[1], sensor2Data, sizeof(sensor2Data));
     memcpy(telem.s[2], sensor3Data, sizeof(sensor3Data));
@@ -386,14 +387,14 @@ void updateHardware() {
 
 //******************* Control Systems *******************//
 
-float massFlowWaterToThetaDotTransfer(float desired_flow)
+float massFlowWaterToThetaDotTransfer(float desired_flow, float regenFanPercent)
 {
   //iteratively adjust enthalpy value to find true value. if water flow rate is too low, lower enthalpy. too high, raise.
   //(30*pi^2*r^2*rho*h*omega_desmax)/(m.air*t_test*(omega_3-omega_4)(m.air*(omega_3-omega_4)+30*pi*r^2*rho*h*omega_3))
 	//r, pi, rho, h, omega_desmax, t_test all constants
 	//other vars will be collected with state sensors
 
-  float m_air = ;//dependent on fan rate unless we just approximate
+  float m_air = regenFanPercent*32.66*2.0*0.47195;// L/s of air for both fans
   float omega_3 = sensor3Data[2]; //humidity at state 3 (updated every cycle)
   float omega_4 = sensor4Data[2]; //humidity at state 4 (updated every cycle)
   float theta_dot = (30 * (omega_3 - omega_4) * PI * PI * pow(r,2)*rho*h*omega_dot)/
