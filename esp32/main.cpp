@@ -90,8 +90,8 @@ float sensor3Data[3] = {0.0, 0.0, 0.0};
 // Constants for wheel speed func
 float omega_dot = 3.16; //rate of desiccant adsorption (g/(m^2*s))
 float r = 0.2; //radius of wheel (0.2m)
-float rho = 983200; //density of water @60c (g/m^3)
-float h = 31125; //fabric mass enthalpy
+float rho = 983200.0; //density of water @60c (g/m^3)
+float h = 31125.0; //fabric mass enthalpy
 
 float desired_m_water = 0.081; //desired water mass flow rate (g/s); equiv to 7L/day
 
@@ -366,6 +366,7 @@ void networkTask(void *) {
 }
 
 void updateHardware() {
+  static int lastHeaterPct = 0;
   Commands c;
   xSemaphoreTake(dataMutex, portMAX_DELAY);
   c = cmd;
@@ -409,18 +410,18 @@ float massFlowWaterToThetaDotTransfer(float desired_flow, float regenFanPercent)
 	//other vars will be collected with state sensors
 
   float m_air = regenFanPercent*32.66*2.0*0.47195;// L/s of air for both fans
-  float omega_3 = sensor3Data[2]; //humidity at state 3 (updated every cycle)
-  float omega_4 = sensor2Data[2]; //humidity at state 4 (updated every cycle)
-  float theta_dot = (30 * (omega_3 - omega_4) * PI * PI * pow(r,2)*rho*h*omega_dot)/
-  ((omega_3-omega_4)*(m_air*(omega_3-omega_4)+30*PI*pow(r,2)*rho*h*omega_3));
+  float omega_3 = sensor3Data[2]/100.0; //humidity at state 3 (updated every cycle)
+  float omega_4 = sensor2Data[2]/100.0; //humidity at state 4 (updated every cycle)
+  float theta_dot = (30.0 * (omega_3 - omega_4) * PI * PI * pow(r,2)*rho*h*omega_dot)/
+  ((omega_3-omega_4)*(m_air*(omega_3-omega_4)+30.0*PI*pow(r,2)*rho*h*omega_3));
   
   if(m_air * (omega_3 - omega_4) > desired_m_water)
   {
-    h += 1;
+    h += 0.1;
   }
   else
   {
-    h -= 1;
+    h -= 0.1;
   }
   return theta_dot;
 }
@@ -447,6 +448,6 @@ double heaterControl(double T_in, double T_sensor)
 
   e_prev = err; //pretty obv tbh
   perc_prev = perc_out; //also obv
-  
+
   return perc_out;
 }
