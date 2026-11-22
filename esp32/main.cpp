@@ -435,7 +435,7 @@ double heaterControl(double T_in, double T_sensor)
 {
   static double e_prev = 0.0;
   static double perc_prev = 0.0; //all perc vars are percent of full power of heater
-  const double A_heater = 0.0056; // m^2
+  const double A_heater = 0.0056*2.0; // m^2
   const double h_conv = 21.3; // W/(m^2*K) convective coeff
   const double C_th = 50.0; // J/K thermal capacity
   const double P_max = 500.0; // heater power @ 100%
