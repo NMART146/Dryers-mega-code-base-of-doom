@@ -433,7 +433,7 @@ double heaterControl(double T_in, double T_sensor)
   const double A_heater = 0.0056; // m^2
   const double h_conv = 21.3; // W/(m^2*K) convective coeff
   const double C_th = 50.0; // J/K thermal capacity
-  const double P_max = 440.0; // heater power @ 100%
+  const double P_max = 500.0; // heater power @ 100%
   const double Ts = LOOP_INTERVAL_MS / 1000.0; // 0.1 s
   const double zeta = 0.7; //damping ratio
   const double omega_n = 0.147; // natty freakquency for tr=15s ts=43s
