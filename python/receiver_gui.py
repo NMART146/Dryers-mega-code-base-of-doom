@@ -216,9 +216,9 @@ def run_gui():
 
     # Grid alignment for parameters
     fields = [
-        ("kP (Proportional):", kp_var),
-        ("kI (Integral):", ki_var),
-        ("Target Water/Day (L):", water_var),
+        # ("kP (Proportional):", kp_var), # Commented out: not needed for now, if we have extra time later, will add back
+        # ("kI (Integral):", ki_var),
+        # ("Target Water/Day (L):", water_var),
         ("Adsorb Chamber Fan Power:", adsorb_power_var),
         ("Regeneration Chamber Fan Power:", regen_power_var),
     ]
@@ -439,7 +439,7 @@ def run_gui():
                         label=format_label(k),
                         linewidth=1.5,
                     )
-                ax_press.set_ylabel("Pressure (hPa)")
+                ax_press.set_ylabel("Pressure (Pa)")
                 ax_press.grid(True, linestyle="--", alpha=0.5)
                 if press_keys:
                     ax_press.legend(loc="upper left", fontsize=8)
