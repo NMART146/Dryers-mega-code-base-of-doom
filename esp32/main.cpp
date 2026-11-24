@@ -79,7 +79,9 @@ AccelStepper stepper(motorInterfaceType, stepPin, dirPin);
 // Dimmer pins
 #define ZC_PIN 13
 #define HEATER_PIN 14
+#define HEATER2_PIN 12
 dimmerLamp HeaterDimmer(HEATER_PIN, ZC_PIN);
+dimmerLamp HeaterDimmer2(HEATER2_PIN, ZC_PIN);
 
 
 // Storage arrays: [temp, pressure, humidity]
@@ -250,8 +252,10 @@ void setup()
 
   // Initialize dimmers
   HeaterDimmer.begin(NORMAL_MODE, ON);
+  HeaterDimmer2.begin(NORMAL_MODE, ON);
   // Set dimmer level to 100% power
   HeaterDimmer.setPower(0);
+  HeaterDimmer2.setPower(0);
 
   xTaskCreatePinnedToCore(networkTask, "net", 8192, NULL, 1, NULL, 0);
 }
@@ -387,12 +391,14 @@ void updateHardware() {
     int targetPct = constrain((int)heaterPct, 0, 100);
     if (targetPct != lastHeaterPct) {
       HeaterDimmer.setPower(targetPct);
+      HeaterDimmer2.setPower(targetPct);
       lastHeaterPct = targetPct;
     }
   }
   else
   {
     HeaterDimmer.setPower(0);
+    HeaterDimmer2.setPower(0);
     lastHeaterPct = 0;
   }
 
